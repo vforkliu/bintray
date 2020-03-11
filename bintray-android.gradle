@@ -1,6 +1,23 @@
 apply plugin: 'maven-publish'
 apply plugin: 'com.jfrog.bintray'
 
+task sourceJar(type: Jar) {
+    from android.sourceSets.main.java.srcDirs
+    archiveClassifier = "sources"
+}
+
+task javadoc(type: Javadoc) {
+
+    //增加编码，这行很重要，如果是windows系统，同时如果在代码中有中文的话，不加这行，上传会报错
+    options.encoding="utf-8"
+    source = android.sourceSets.main.java.srcDirs
+    classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
+}
+task javadocJar(type: Jar, dependsOn: javadoc) {
+    archiveClassifier = 'javadoc'
+    from javadoc.destinationDir
+}
+
 afterEvaluate {
     publishing {
         publications {
@@ -10,7 +27,8 @@ afterEvaluate {
                 groupId project.ext.GROUP_ID
                 artifactId project.ext.ARTIFACT_ID
                 version project.ext.ARTIFACT_VERSION
-
+                artifact(sourceJar)
+                artifact javadocJar
                 pom {
                     name = project.ext.PROJECT_NAME
                     description = project.ext.PROJECT_DESC
