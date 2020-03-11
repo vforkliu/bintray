@@ -1,0 +1,27 @@
+// 是否是android 工程
+boolean isAndroidModule() {
+    boolean result = project.plugins.hasPlugin('com.android.library')
+    if (result) {
+        log "$project.name is an android module"
+    }
+    return result
+}
+
+// 是否是java工程
+boolean isJavaModule() {
+    boolean result = ((project.plugins.hasPlugin('java-library')
+            || project.plugins.hasPlugin('java'))
+            && !isAndroidModule())
+    if (result) {
+        log "$project.name is a java module"
+    }
+    return result
+}
+
+def getAndroidPluginVersion() {
+    Class<?> gradleVersionClazz = project.plugins.getPlugin('com.android.library').class.getClassLoader().
+            loadClass('com.android.builder.model.Version')
+    String version = (String) gradleVersionClazz.getDeclaredField('ANDROID_GRADLE_PLUGIN_VERSION').get(null)
+    return version
+}
+

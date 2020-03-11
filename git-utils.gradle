@@ -1,0 +1,68 @@
+import java.util.regex.Pattern
+
+/**
+ *
+ * 获取project工程当前 git 根目录
+ * @param projec
+ * @return 返回 git 库根目录路径
+ *
+ */
+String getCurrGitRootPath(Project project) {
+    def stdout = new ByteArrayOutputStream()
+    project.exec {
+        commandLine 'git', 'rev-parse', '--show-toplevel'
+        standardOutput = stdout
+    }
+
+    String pathDir = stdout.toString().trim()
+    stdout.close()
+    return pathDir
+}
+
+/**
+ *
+ * 获取project工程当前commitId
+ * @param project
+ * @return 成功：40位标准格式CommitID，失败：null
+ *
+ */
+String getCurrCommitId(Project project) {
+    def stdout = new ByteArrayOutputStream()
+    project.exec {
+        commandLine 'git', 'rev-parse', 'HEAD'
+        standardOutput = stdout
+    }
+
+    String commitId = stdout.toString().trim()
+    stdout.close()
+
+    if (Pattern.matches('[0-9a-fA-F]{40}', commitId)) {
+        return commitId
+    }
+
+    return null
+}
+
+/**
+ *
+ * 获取project工程当前git repository url
+ * @param project
+ * @return 成功：url，失败：null
+ *
+ */
+String getGitRepositoryUrl(Project project) {
+    def stdout = new ByteArrayOutputStream()
+    project.exec {
+        commandLine 'git', 'config', '--get', 'remote.origin.url'
+        standardOutput = stdout
+    }
+
+    String gitUrl = stdout.toString().trim()
+    stdout.close()
+
+    if (gitUrl.startsWith("git@") || gitUrl.startsWith("https")) {
+        return gitUrl
+    }
+
+    return null
+}

@@ -1,0 +1,151 @@
+import groovy.json.JsonBuilder
+import groovy.json.JsonSlurper
+import groovy.xml.XmlUtil
+
+class PomManager {
+
+    static class GitHelper {
+
+        def project
+
+        GitHelper(project) {
+            this.project = project
+        }
+
+        def getGitUrl() {
+            def stdout = new ByteArrayOutputStream()
+            project.exec {
+                commandLine 'sh', '-c', 'git config --get remote.origin.url'
+                standardOutput = stdout
+            }
+            return stdout.toString().trim()
+        }
+
+        def getGitSha() {
+            def stdout = new ByteArrayOutputStream()
+            project.exec {
+                commandLine 'sh', '-c', 'git rev-parse HEAD'
+                standardOutput = stdout
+            }
+            return stdout.toString().trim()
+        }
+
+        def getProject() {
+            return project.name
+        }
+    }
+
+    /**
+     * 支持自定义参数写入pom, 位于project目录gradle.properties
+     * @sample POM_PARAMS={"key1":"value","key2":1}
+     */
+    static class ParamsHelper {
+
+        def project
+
+        ParamsHelper(project) {
+            this.project = project
+        }
+
+        private Map parse() {
+            try {
+                if (!project.hasProperty(POM_PARAMS)) {
+                    return null
+                }
+            } catch (Exception ignore) {
+                return null
+            }
+            String paramsString
+            paramsString = project.getProperty(POM_PARAMS)
+            def jsonSlurper = new JsonSlurper()
+            def result = jsonSlurper.parseText(paramsString)
+            if (result != null && result instanceof Map) {
+                return result
+            }
+            throw new RuntimeException("`" + POM_PARAMS + "`" + " parse error! `${paramsString}` is not json string!")
+        }
+    }
+
+    static void inject(project) {
+        new PomManager(project).registerTask()
+    }
+
+    private static final String POM_PARAMS = "POM_PARAMS"
+    private static final String POM_KEY = "description"
+    private final GitHelper gitHelper
+    private final ParamsHelper paramsHelper
+    private final Project project
+
+    PomManager(project) {
+        this.project = project
+        this.gitHelper = new GitHelper(project)
+        this.paramsHelper = new ParamsHelper(project)
+    }
+
+    private void registerTask() {
+        project.tasks.withType(GenerateMavenPom) { Task generatePom ->
+            generatePom.doLast {
+                modify(destination)
+            }
+        }
+    }
+
+    private void modify(File file) {
+        def parser = new XmlParser()
+        if (!file.exists()) {
+            throw FileNotFoundException("file is not exists `" + file.path + "`")
+        }
+
+        def rootNode = parser.parse(file)
+
+        final Map appendData = new HashMap()
+        appendRepoInfo(appendData)
+        appendUserDefineInfo(appendData)
+        appendDataToRootNode(rootNode, appendData)
+
+        PrintWriter pw = new PrintWriter(file, ("UTF-8"))
+        pw.write(XmlUtil.serialize(rootNode))
+        pw.close()
+    }
+
+    private void appendRepoInfo(Map map) {
+        map.put("git", gitHelper.getGitUrl())
+        map.put("project", gitHelper.getProject())
+        map.put("sha1", gitHelper.getGitSha())
+    }
+
+    private void appendUserDefineInfo(Map map) {
+        Map params = paramsHelper.parse()
+        if (params == null || params.isEmpty()) {
+            return
+        }
+        for (Map.Entry item : params) {
+            if (map.containsKey(item.key)) {
+                throw new RuntimeException("`" + item.key + "`" + " duplicate params!")
+            }
+            map.put(item.key, item.value)
+        }
+    }
+
+    private void appendDataToRootNode(rootNode, appendData) {
+        if (rootNode) {
+            def descriptionNode = rootNode.get(POM_KEY)
+            if (descriptionNode) {
+                try {
+                    def jsonSlurper = new JsonSlurper()
+                    def object = jsonSlurper.parseText(descriptionNode.text())
+                    if (appendData.get("sha1") == object.sha1) {
+                        print "insert duplication"
+                        return
+                    }
+                } catch (Throwable ignore) {
+                }
+                appendData.put(POM_KEY, descriptionNode.text())
+                rootNode.remove(descriptionNode)
+            }
+            rootNode.appendNode(POM_KEY, new JsonBuilder(appendData).toString())
+        }
+    }
+}
+
+PomManager.inject(project)
